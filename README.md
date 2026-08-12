@@ -10,6 +10,11 @@
 
 # LiveKit: Real-time video, audio and data for developers
 
+> **This is a fork.** It adds `rtc.node_ips`, which advertises several addresses as separate
+> ICE host candidates so that one node can serve clients that reach it at different addresses.
+> See [Multiple node IPs](#multiple-node-ips-fork-addition) below. Everything else tracks
+> upstream [livekit/livekit](https://github.com/livekit/livekit).
+
 [LiveKit](https://livekit.io) is an open source project that provides scalable, multi-user conferencing based on WebRTC.
 It's designed to provide everything you need to build real-time video audio data capabilities in your applications.
 
@@ -278,6 +283,44 @@ Sign up for [LiveKit Cloud](https://cloud.livekit.io/).
 ### Self-host
 
 Read our [deployment docs](https://docs.livekit.io/transport/self-hosting/) for more information.
+
+## Multiple node IPs (fork addition)
+
+A node behind NAT is often reachable at more than one address: a public address for clients on
+the internet, and a private address for clients on the same LAN. `node_ip` holds a single
+address, so one of those client groups always receives a candidate it cannot reach.
+
+`rtc.node_ips` advertises every listed address as its own ICE host candidate:
+
+```yaml
+rtc:
+  udp_port: 7881
+  node_ips:
+    - 203.0.113.10   # public address, for clients on the internet
+    - 10.1.6.19      # private address, for clients on the LAN
+  node_ip: 203.0.113.10 # optional, see "node identity" below
+```
+
+Clients then receive a host candidate per address on the same port, and ICE picks whichever one
+works for them. The equivalent flag is `--node-ips` (env `NODE_IPS`), taking a comma separated
+list.
+
+Notes:
+
+-   **Precedence.** `node_ips` wins over `node_ip` and over STUN discovery when building
+    candidates. Leaving it unset preserves upstream behaviour exactly.
+-   **Node identity.** Redis registration and inter-node communication keep using a single
+    address, so clustering is unaffected: `node_ip` when set, otherwise the first entry of
+    `node_ips`. Set `node_ip` explicitly when the address other nodes use to reach this one is
+    neither of the advertised ones.
+-   **Local addresses.** By default the listed addresses replace the local ones in candidates.
+    Set `advertise_internal_ip: true` to keep the local addresses as candidates as well, which
+    only helps when clients can reach the node directly at those addresses.
+-   **Ports.** The port in every candidate is the node's own port, so anything in front of the
+    node (NAT, a proxy) has to forward that same port. With `udp_port: 7881`, a proxy answering
+    on a private address must listen on 7881/udp and forward to the node's 7881/udp.
+-   **TURN.** The embedded TURN server still derives its relay address from the single
+    `node_ip`. `node_ips` covers host candidates only.
 
 ## Building from source
 
