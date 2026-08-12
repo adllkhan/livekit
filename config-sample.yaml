@@ -74,10 +74,24 @@ rtc:
   # # when set to true, SFU skips external IP accessibility checks via self-ping.
   # # enable this when SFU is behind NAT that does not allow self-ping. only works when `use_external_ip` is set to true.
   # skip_external_ip_validation: true
+  # # when the node has to be reachable at more than one address, list them here and each one is
+  # # advertised to clients as its own ICE host candidate. typical case: a node behind NAT that
+  # # internet clients reach at a public address while LAN clients reach it at a private one.
+  # # takes precedence over `node_ip` and over STUN discovery for candidate advertisement.
+  # # by default the listed addresses replace the local ones in candidates; set
+  # # `advertise_internal_ip` to keep the local addresses as candidates as well.
+  # # node identity in Redis and inter-node communication still use a single address:
+  # # `node_ip` when set, otherwise the first address listed here.
+  # node_ips:
+  #   - <public-ip-of-node>
+  #   - <private-ip-of-node>
   # # there are cases where the public IP determined via STUN is not the correct one
-  # # in such cases, use this setting to set the public IP of the node
-  # # use_external_ip takes precedence, for this to take effect, set use_external_ip to false
-  # node_ip: <external-ip-of-node>
+  # # in such cases, use this setting to set the IP of the node
+  # # this IP is used for node routing, TURN relay allocation and the TURN URLs handed to clients
+  # # when set, it is never overwritten by STUN discovery, even with use_external_ip enabled
+  # # ICE candidates are unaffected: with use_external_ip, external IPs are still discovered per
+  # # local interface and advertised (together with the internal ones when advertise_internal_ip is set)
+  # node_ip: <ip-of-node>
   # # when set, LiveKit will attempt to use a UDP mux so all UDP traffic goes through
   # # listed port(s). To maximize system performance, we recommend using a range of ports
   # # greater or equal to the number of vCPUs on the machine.

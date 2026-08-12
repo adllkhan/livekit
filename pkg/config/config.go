@@ -16,6 +16,7 @@ package config
 
 import (
 	"fmt"
+	"net"
 	"os"
 	"reflect"
 	"strconv"
@@ -119,6 +120,17 @@ type Config struct {
 
 type RTCConfig struct {
 	rtcconfig.RTCConfig `yaml:",inline"`
+
+	// NodeIPs are advertised to clients as ICE host candidates, one candidate per address.
+	// Use it when the node has to be reachable at more than one address, e.g. a public
+	// address for clients on the internet and a private address for clients on the LAN.
+	//
+	// It only affects candidate advertisement and takes precedence over node_ip and over
+	// STUN discovery for that purpose. Node identity in Redis and inter-node communication
+	// keep using a single address: node_ip when set, otherwise the first entry here.
+	//
+	// Leaving it unset preserves the previous behaviour entirely.
+	NodeIPs []string `yaml:"node_ips,omitempty"`
 
 	TURNServers []TURNServer `yaml:"turn_servers,omitempty"`
 
@@ -616,9 +628,26 @@ func NewConfig(confString string, strictMode bool, c *cli.Command, baseFlags []c
 		}
 	}
 
+	// node_ips, when set, also supplies the single address used for node identity and
+	// inter-node communication, so it has to be normalized before RTC.Validate().
+	if err := conf.RTC.normalizeNodeIPs(); err != nil {
+		return nil, err
+	}
+
+	// An explicitly configured node_ip is authoritative. RTC.Validate() would otherwise
+	// replace it with the STUN discovered external IP whenever use_external_ip is set,
+	// which loses the configured IP used for node routing and TURN relay/advertisement.
+	// External IPs are still discovered per local interface when building the WebRTC
+	// config, so ICE candidates continue to advertise the mapped external addresses
+	// (along with the internal ones when advertise_internal_ip is set).
+	useExternalIP := conf.RTC.UseExternalIP
+	if !conf.RTC.NodeIP.IsEmpty() {
+		conf.RTC.UseExternalIP = false
+	}
 	if err := conf.RTC.Validate(conf.Development); err != nil {
 		return nil, fmt.Errorf("could not validate RTC config: %v", err)
 	}
+	conf.RTC.UseExternalIP = useExternalIP
 
 	conf.NormalizeTURNTTLs()
 
@@ -831,6 +860,59 @@ func ClampTURNTTLSeconds(ttlSeconds int) (int, bool) {
 	}
 }
 
+// normalizeNodeIPs validates node_ips, drops duplicates while preserving order and, when
+// node_ip has not been configured, derives it from the first address of each family so that
+// node identity and inter-node communication keep using a single address. Safe to call more
+// than once.
+func (conf *RTCConfig) normalizeNodeIPs() error {
+	if len(conf.NodeIPs) == 0 {
+		return nil
+	}
+
+	seen := make(map[string]struct{}, len(conf.NodeIPs))
+	normalized := make([]string, 0, len(conf.NodeIPs))
+	for _, nodeIP := range conf.NodeIPs {
+		trimmed := strings.TrimSpace(nodeIP)
+		if trimmed == "" {
+			continue
+		}
+		ip := net.ParseIP(trimmed)
+		if ip == nil {
+			return fmt.Errorf("invalid node_ips entry %q", nodeIP)
+		}
+		canonical := ip.String()
+		if _, ok := seen[canonical]; ok {
+			continue
+		}
+		seen[canonical] = struct{}{}
+		normalized = append(normalized, canonical)
+	}
+	if len(normalized) == 0 {
+		return errors.New("node_ips is set but contains no address")
+	}
+	conf.NodeIPs = normalized
+
+	// node_ip, when given, stays the node's identity. Otherwise adopt the first address of
+	// each family, keeping NodeIP a single IPv4/IPv6 pair as the rest of the stack expects.
+	if !conf.NodeIP.IsEmpty() {
+		return nil
+	}
+	for _, nodeIP := range normalized {
+		ip := net.ParseIP(nodeIP)
+		if ip.To4() != nil {
+			if conf.NodeIP.V4 == "" {
+				conf.NodeIP.V4 = nodeIP
+			}
+			continue
+		}
+		if conf.NodeIP.V6 == "" {
+			conf.NodeIP.V6 = nodeIP
+		}
+	}
+
+	return nil
+}
+
 // NormalizeTURNTTLs clamps configured TURN TTLs to the safe range, warning on any
 // adjustment. Safe to call more than once.
 func (conf *Config) NormalizeTURNTTLs() {
@@ -1038,6 +1120,9 @@ func (conf *Config) updateFromCLI(c *cli.Command, baseFlags []cli.Flag) error {
 	}
 	if c.IsSet("node-ip") {
 		conf.RTC.NodeIP.UnmarshalString(c.String("node-ip"))
+	}
+	if c.IsSet("node-ips") {
+		conf.RTC.NodeIPs = c.StringSlice("node-ips")
 	}
 	if c.IsSet("udp-port") {
 		conf.RTC.UDPPort.UnmarshalString(c.String("udp-port"))

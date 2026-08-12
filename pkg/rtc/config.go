@@ -23,6 +23,7 @@ import (
 	act "github.com/livekit/livekit-server/pkg/sfu/rtpextension/abscapturetime"
 	dd "github.com/livekit/livekit-server/pkg/sfu/rtpextension/dependencydescriptor"
 	"github.com/livekit/mediatransportutil/pkg/rtcconfig"
+	"github.com/livekit/protocol/logger"
 )
 
 const (
@@ -70,6 +71,10 @@ func NewWebRTCConfig(conf *config.Config) (*WebRTCConfig, error) {
 	// we don't want to use active TCP on a server, clients should be dialing
 	webRTCConfig.SettingEngine.DisableActiveTCP(true)
 
+	if err := setNodeIPsRewriteRules(webRTCConfig, &rtcConf); err != nil {
+		return nil, err
+	}
+
 	if rtcConf.PacketBufferSize == 0 {
 		rtcConf.PacketBufferSize = 500
 	}
@@ -89,6 +94,49 @@ func NewWebRTCConfig(conf *config.Config) (*WebRTCConfig, error) {
 		Publisher:  getPublisherConfig(false),
 		Subscriber: getSubscriberConfig(rtcConf.CongestionControl.UseSendSideBWEInterceptor || rtcConf.CongestionControl.UseSendSideBWE),
 	}, nil
+}
+
+// setNodeIPsRewriteRules advertises every configured node IP as its own ICE host candidate.
+//
+// pion keeps a list of external addresses per local address, so a single rule carrying all of
+// them yields one host candidate per address instead of only the first one. advertise_internal_ip
+// additionally keeps the local address itself, which is only useful when clients can reach it.
+//
+// This replaces whatever rules NewWebRTCConfig derived from STUN: configured addresses are
+// explicit and take precedence over discovery.
+func setNodeIPsRewriteRules(webRTCConfig *rtcconfig.WebRTCConfig, rtcConf *config.RTCConfig) error {
+	if len(rtcConf.NodeIPs) == 0 {
+		return nil
+	}
+
+	mode := webrtc.ICEAddressRewriteReplace
+	if rtcConf.AdvertiseInternalIP {
+		mode = webrtc.ICEAddressRewriteAppend
+	}
+
+	// no Local/CIDR/Iface: the addresses apply to every local address of the same family,
+	// which is what a NAT'd or proxied node needs. Narrow the gathered set with the
+	// interfaces/ips filters when a node has interfaces that must not be advertised.
+	if err := webRTCConfig.SettingEngine.SetICEAddressRewriteRules(webrtc.ICEAddressRewriteRule{
+		External:        rtcConf.NodeIPs,
+		AsCandidateType: webrtc.ICECandidateTypeHost,
+		Mode:            mode,
+	}); err != nil {
+		return err
+	}
+
+	// NAT1To1IPs holds external/local pairs used to restrict candidates for clients without
+	// prflx-over-relay support. Configured node IPs are not tied to a local address, so there
+	// is nothing to pair up and the list is cleared to leave those clients unrestricted.
+	webRTCConfig.NAT1To1IPs = nil
+
+	logger.Infow(
+		"advertising configured node IPs as ICE host candidates",
+		"nodeIPs", rtcConf.NodeIPs,
+		"keepLocalAddress", rtcConf.AdvertiseInternalIP,
+	)
+
+	return nil
 }
 
 func (c *WebRTCConfig) UpdatePublisherConfig(consolidated bool) {

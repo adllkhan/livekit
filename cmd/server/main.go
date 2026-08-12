@@ -72,6 +72,11 @@ var baseFlags = []cli.Flag{
 		Usage:   "IP address of the current node, used to advertise to clients. Automatically determined by default",
 		Sources: cli.EnvVars("NODE_IP"),
 	},
+	&cli.StringSliceFlag{
+		Name:    "node-ips",
+		Usage:   "IP addresses of the current node, each advertised to clients as its own ICE host candidate. Takes precedence over --node-ip for candidates; node identity uses --node-ip, or the first address here",
+		Sources: cli.EnvVars("NODE_IPS"),
+	},
 	&cli.StringFlag{
 		Name:    "udp-port",
 		Usage:   "UDP port(s) to use for WebRTC traffic",
