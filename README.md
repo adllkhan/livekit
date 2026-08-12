@@ -20,13 +20,12 @@ It's designed to provide everything you need to build real-time video audio data
 
 LiveKit's server is written in Go, using the awesome [Pion WebRTC](https://github.com/pion/webrtc) implementation.
 
-[![GitHub stars](https://img.shields.io/github/stars/livekit/livekit?style=social&label=Star&maxAge=2592000)](https://github.com/livekit/livekit/stargazers/)
+[![GitHub stars](https://img.shields.io/github/stars/adllkhan/livekit?style=social&label=Star&maxAge=2592000)](https://github.com/adllkhan/livekit/stargazers/)
 [![Slack community](https://img.shields.io/endpoint?url=https%3A%2F%2Flivekit.io%2Fbadges%2Fslack)](https://livekit.io/join-slack)
 [![Twitter Follow](https://img.shields.io/twitter/follow/livekit)](https://twitter.com/livekit)
-[![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/livekit/livekit)
-[![GitHub release (latest SemVer)](https://img.shields.io/github/v/release/livekit/livekit)](https://github.com/livekit/livekit/releases/latest)
-[![GitHub Workflow Status](https://img.shields.io/github/actions/workflow/status/livekit/livekit/buildtest.yaml?branch=master)](https://github.com/livekit/livekit/actions/workflows/buildtest.yaml)
-[![License](https://img.shields.io/github/license/livekit/livekit)](https://github.com/livekit/livekit/blob/master/LICENSE)
+[![Docker image](https://img.shields.io/docker/v/adlilkhan/livekit-server?label=docker)](https://hub.docker.com/r/adlilkhan/livekit-server/tags)
+[![Upstream](https://img.shields.io/badge/upstream-livekit%2Flivekit-blue)](https://github.com/livekit/livekit)
+[![License](https://img.shields.io/github/license/adllkhan/livekit)](https://github.com/adllkhan/livekit/blob/master/LICENSE)
 
 ## Features
 
@@ -196,10 +195,18 @@ enabling you to build automations that behave like end-users.
 ### Tools
 
 -   [CLI](https://github.com/livekit/livekit-cli) - command line interface & load tester
--   [Docker image](https://hub.docker.com/r/livekit/livekit-server)
+-   [Docker image](https://hub.docker.com/r/adlilkhan/livekit-server) - this fork
 -   [Helm charts](https://github.com/livekit/livekit-helm)
 
 ## Install
+
+> [!IMPORTANT]
+> The installers below fetch upstream releases, which do **not** include `rtc.node_ips`. To get
+> this fork, use its container image or [build from source](#building-from-source):
+>
+> ```shell
+> docker pull adlilkhan/livekit-server:1.13.5-node-ips
+> ```
 
 > [!TIP]
 > We recommend installing [LiveKit CLI](https://github.com/livekit/livekit-cli) along with the server. It lets you access
@@ -297,7 +304,7 @@ rtc:
   udp_port: 7881
   node_ips:
     - 203.0.113.10   # public address, for clients on the internet
-    - 10.1.6.19      # private address, for clients on the LAN
+    - 10.0.0.10      # private address, for clients on the LAN
   node_ip: 203.0.113.10 # optional, see "node identity" below
 ```
 
@@ -332,10 +339,16 @@ Pre-requisites:
 Then run
 
 ```shell
-git clone https://github.com/livekit/livekit
+git clone https://github.com/adllkhan/livekit
 cd livekit
 ./bootstrap.sh
 mage
+```
+
+To build a container image instead:
+
+```shell
+docker build -t adlilkhan/livekit-server:node-ips .
 ```
 
 ## Contributing
